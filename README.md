@@ -1,5 +1,7 @@
 # Annotate Anything
 
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/binh234/annotate-anything/blob/main/notebooks/Annotate_Anything.ipynb)
+
 ![demo](images/demo.png)
 
 ![demo_seg](images/demo_seg.png)
