@@ -248,18 +248,19 @@ with gr.Blocks(css="style.css", title=title) as demo:
             ).style(preview=True, grid=2, object_fit="scale-down")
             meta_file = gr.File(label="Metadata file")
 
-    gr.Examples(
-        [
-            ["examples/dog.png", "auto", ""],
-            ["examples/eiffel.png", "auto", ""],
-            ["examples/eiffel.png", "segment", ""],
-            ["examples/girl.png", "auto", "girl . face"],
-            ["examples/horse.png", "detect", "horse"],
-            ["examples/horses.jpg", "auto", "horse"],
-            ["examples/traffic.jpg", "auto", ""],
-        ],
-        [input_image, task, text_prompt],
-    )
+    with gr.Row(elem_classes=["container"]):
+        gr.Examples(
+            [
+                ["examples/dog.png", "auto", ""],
+                ["examples/eiffel.png", "auto", ""],
+                ["examples/eiffel.png", "segment", ""],
+                ["examples/girl.png", "auto", "girl . face"],
+                ["examples/horse.png", "detect", "horse"],
+                ["examples/horses.jpg", "auto", "horse"],
+                ["examples/traffic.jpg", "auto", ""],
+            ],
+            [input_image, task, text_prompt],
+        )
     run_button.click(
         fn=process,
         inputs=[
