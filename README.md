@@ -1,4 +1,10 @@
-# annotate-anything
+# Annotate Anything
+
+![demo](images/demo.png)
+
+![demo_seg](images/demo_seg.png)
+
+![demo_horse](images/demo_horse.png)
 
 ## Install libraries
 
