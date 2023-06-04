@@ -1,20 +1,19 @@
 import json
 import os
-import subprocess
 import sys
 import tempfile
 
 import gradio as gr
 import numpy as np
 import supervision as sv
+import torch
+from groundingdino.util.inference import Model as DinoModel
 from PIL import Image
 from segment_anything import build_sam
 from segment_anything import SamAutomaticMaskGenerator
 from segment_anything import SamPredictor
 from supervision.detection.utils import mask_to_polygons
 from supervision.detection.utils import xywh_to_xyxy
-
-from groundingdino.util.inference import Model as DinoModel
 
 # segment anything
 # Grounding DINO
@@ -25,19 +24,37 @@ from tag2text.models import tag2text
 from config import *
 from utils import download_file_hf, detect, segment, show_anns, generate_tags
 
+if not os.path.exists(abs_weight_dir):
+    os.makedirs(abs_weight_dir, exist_ok=True)
+
+sam_checkpoint = os.path.join(abs_weight_dir, sam_dict[default_sam]["checkpoint_file"])
 if not os.path.exists(sam_checkpoint):
-    result = subprocess.run(["wget", sam_url], check=True)
-    print(f"wget sam_vit_h_4b8939.pth result = {result}")
+    os.system(f"wget {sam_dict[default_sam]['checkpoint_url']} -O {sam_checkpoint}")
 
+tag2text_checkpoint = os.path.join(
+    abs_weight_dir, tag2text_dict[default_tag2text]["checkpoint_file"]
+)
 if not os.path.exists(tag2text_checkpoint):
-    result = subprocess.run(["wget", tag2text_url], check=True)
-    print(f"wget sam_vit_h_4b8939.pth result = {result}")
+    os.system(
+        f"wget {tag2text_dict[default_tag2text]['checkpoint_url']} -O {tag2text_checkpoint}"
+    )
 
-if not os.path.exists(dino_config_file):
-    download_file_hf(repo_id=dino_repo_id, filename=dino_config_file, cache_dir="./")
-
+dino_checkpoint = os.path.join(
+    abs_weight_dir, dino_dict[default_dino]["checkpoint_file"]
+)
+dino_config_file = os.path.join(abs_weight_dir, dino_dict[default_dino]["config_file"])
 if not os.path.exists(dino_checkpoint):
-    download_file_hf(repo_id=dino_repo_id, filename=dino_checkpoint, cache_dir="./")
+    dino_repo_id = dino_dict[default_dino]["repo_id"]
+    download_file_hf(
+        repo_id=dino_repo_id,
+        filename=dino_dict[default_dino]["config_file"],
+        cache_dir=weight_dir,
+    )
+    download_file_hf(
+        repo_id=dino_repo_id,
+        filename=dino_dict[default_dino]["checkpoint_file"],
+        cache_dir=weight_dir,
+    )
 
 # load model
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -145,7 +162,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
                     xyxy=xywh_to_xyxy(boxes_xywh=xywh), mask=mask
                 )
                 # opacity = 0.4
-                # mask_image, _ = show_anns(masks)
+                # mask_image, _ = show_anns_sam(masks)
                 # annotated_image = np.uint8(mask_image * opacity + image * (1 - opacity))
 
             mask_annotator = sv.MaskAnnotator()
@@ -189,11 +206,6 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
 
 
 title = "Annotate Anything"
-description = r"""Gradio demo for <a href='https://github.com/TencentARC/GFPGAN' target='_blank'><b>GFPGAN: Towards Real-World Blind Face Restoration with Generative Facial Prior</b></a>.<br>
-It can be used to restore your **old photos** or improve **AI-generated faces**.<br>
-To use it, simply upload your image.<br>
-If GFPGAN is helpful, please help to ⭐ the <a href='https://github.com/TencentARC/GFPGAN' target='_blank'>Github Repo</a> and recommend it to your friends 😊
-"""
 
 with gr.Blocks(css="style.css", title=title) as demo:
     with gr.Row(elem_classes=["container"]):

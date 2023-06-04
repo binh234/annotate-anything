@@ -12,13 +12,14 @@ from PIL import Image
 from segment_anything import sam_model_registry
 from segment_anything import SamAutomaticMaskGenerator
 from segment_anything import SamPredictor
+from supervision.detection.utils import xywh_to_xyxy
 from tqdm import tqdm
 
 sys.path.append("tag2text")
 
 from tag2text.models import tag2text
 from config import *
-from utils import detect, segment, show_anns, generate_tags
+from utils import detect, download_file_hf, segment, generate_tags, show_anns_sv
 
 
 def process(
@@ -60,8 +61,8 @@ def process(
         if task in ["auto", "detection"] and prompt == "":
             tags, caption = generate_tags(tag2text_model, image_pil, "None", device)
             prompt = " . ".join(tags)
-            print(f"Caption: {caption}")
-            print(f"Tags: {tags}")
+            # print(f"Caption: {caption}")
+            # print(f"Tags: {tags}")
 
             # ToDo: Extract metadata
             metadata["image"]["caption"] = caption
@@ -69,7 +70,6 @@ def process(
 
         if prompt:
             metadata["prompt"] = prompt
-            print(f"Prompt: {prompt}")
 
         # Detect boxes
         if prompt != "":
@@ -83,17 +83,17 @@ def process(
                 post_process=True,
             )
 
-            # Draw boxes
-            box_annotator = sv.BoxAnnotator()
-            labels = [
-                f"{classes[class_id] if class_id else 'Unkown'} {confidence:0.2f}"
-                for _, _, confidence, class_id, _ in detections
-            ]
-            box_image = box_annotator.annotate(
-                scene=image, detections=detections, labels=labels
-            )
             # Save detection image
             if output_dir:
+                # Draw boxes
+                box_annotator = sv.BoxAnnotator()
+                labels = [
+                    f"{classes[class_id] if class_id else 'Unkown'} {confidence:0.2f}"
+                    for _, _, confidence, class_id, _ in detections
+                ]
+                box_image = box_annotator.annotate(
+                    scene=image, detections=detections, labels=labels
+                )
                 box_image_path = os.path.join(output_dir, basename + "_detect.png")
                 metadata["assets"]["detection"] = box_image_path
                 Image.fromarray(box_image).save(box_image_path)
@@ -105,31 +105,37 @@ def process(
                     sam_predictor, image=image, boxes=detections.xyxy
                 )
                 detections.mask = masks
-
-                mask_annotator = sv.MaskAnnotator()
-
-                mask_image = np.zeros_like(image, dtype=np.uint8)
-                mask_image = mask_annotator.annotate(
-                    mask_image, detections=detections, opacity=1
-                )
-                annotated_image = mask_annotator.annotate(
-                    box_image, detections=detections
-                )
             else:
                 masks = sam_automask_generator.generate(image)
-                opacity = 0.3
-                mask_image, res = show_anns(masks)
-                annotated_image = np.uint8(mask_image * opacity + image * (1 - opacity))
+                sorted_generated_masks = sorted(
+                    masks, key=lambda x: x["area"], reverse=True
+                )
+
+                xywh = np.array([mask["bbox"] for mask in sorted_generated_masks])
+                mask = np.array(
+                    [mask["segmentation"] for mask in sorted_generated_masks]
+                )
+                scores = np.array(
+                    [mask["predicted_iou"] for mask in sorted_generated_masks]
+                )
+                detections = sv.Detections(
+                    xyxy=xywh_to_xyxy(boxes_xywh=xywh), mask=mask
+                )
+
+            # Save annotated image
+            if output_dir:
+                mask_annotator = sv.MaskAnnotator()
+                mask_image, res = show_anns_sv(detections)
+                annotated_image = mask_annotator.annotate(image, detections=detections)
+
+                mask_image_path = os.path.join(output_dir, basename + "_mask.png")
+                metadata["assets"]["mask"] = mask_image_path
+                Image.fromarray(mask_image).save(mask_image_path)
+
                 # Save annotation encoding from https://github.com/LUSSeg/ImageNet-S
                 mask_enc_path = os.path.join(output_dir, basename + "_mask_enc.npy")
                 np.save(mask_enc_path, res)
                 metadata["assets"]["mask_enc"] = mask_enc_path
-
-            # Save annotated image
-            if output_dir:
-                mask_image_path = os.path.join(output_dir, basename + "_mask.png")
-                metadata["assets"]["mask"] = mask_image_path
-                Image.fromarray(mask_image).save(mask_image_path)
 
                 annotated_image_path = os.path.join(
                     output_dir, basename + "_annotate.png"
@@ -147,42 +153,13 @@ def process(
                     "id": id,
                     "bbox": [int(x) for x in xyxy],
                     "box_area": float(box_area),
-                    "box_confidence": float(confidence),
-                    "label": classes[class_id] if class_id else "Unkown",
                 }
+                if class_id:
+                    annotation["box_confidence"] = float(confidence)
+                    annotation["label"] = classes[class_id] if class_id else "Unkown"
                 if mask is not None:
                     annotation["area"] = int(area)
                     annotation["predicted_iou"] = float(score)
-                metadata["annotations"].append(annotation)
-
-                if output_dir and save_mask:
-                    mask_image_path = os.path.join(
-                        output_dir, f"{basename}_mask_{id}.png"
-                    )
-                    metadata["assets"]["intermediate_mask"].append(mask_image_path)
-                    Image.fromarray(mask * 255).save(mask_image_path)
-
-                id += 1
-        else:
-            id = 1
-            # Auto masking
-            for mask in masks:
-                bbox = mask["bbox"]
-                annotation = {
-                    "id": id,
-                    "bbox": [
-                        bbox[0],
-                        bbox[1],
-                        bbox[0] + bbox[2],
-                        bbox[1] + bbox[3],
-                    ],  # Convert from XYWH to XYXY format
-                    "box_area": bbox[3] * bbox[2],
-                    "area": float(mask["area"]),
-                    "predicted_iou": float(mask["predicted_iou"]),
-                    "stability_score": float(mask["stability_score"]),
-                    "crop_box": list(mask["crop_box"]),
-                    "point_coords": list(mask["point_coords"]),
-                }
                 metadata["annotations"].append(annotation)
 
                 if output_dir and save_mask:
@@ -225,8 +202,17 @@ def main(args: argparse.Namespace) -> None:
     # load model
     if task in ["auto", "detection"] and prompt == "":
         print("Loading Tag2Text model...")
+        tag2text_type = args.tag2text
+        tag2text_checkpoint = os.path.join(
+            abs_weight_dir, tag2text_dict[tag2text_type]["checkpoint_file"]
+        )
+        if not os.path.exists(tag2text_checkpoint):
+            print(f"Downloading weights for Tag2Text {tag2text_type} model")
+            os.system(
+                f"wget {tag2text_dict[tag2text_type]['checkpoint_url']} -O {tag2text_checkpoint}"
+            )
         tag2text_model = tag2text.tag2text_caption(
-            pretrained=args.tag2text_checkpoint,
+            pretrained=tag2text_checkpoint,
             image_size=384,
             vit="swin_b",
             delete_tag_index=delete_tag_index,
@@ -239,13 +225,42 @@ def main(args: argparse.Namespace) -> None:
 
     if task in ["auto", "detection"] or prompt != "":
         print("Loading Grounding Dino model...")
+        dino_type = args.dino
+        dino_checkpoint = os.path.join(
+            abs_weight_dir, dino_dict[dino_type]["checkpoint_file"]
+        )
+        dino_config_file = os.path.join(
+            abs_weight_dir, dino_dict[dino_type]["config_file"]
+        )
+        if not os.path.exists(dino_checkpoint):
+            print(f"Downloading weights for Grounding Dino {dino_type} model")
+            dino_repo_id = dino_dict[dino_type]["repo_id"]
+            download_file_hf(
+                repo_id=dino_repo_id,
+                filename=dino_dict[dino_type]["checkpoint_file"],
+                cache_dir=weight_dir,
+            )
+            download_file_hf(
+                repo_id=dino_repo_id,
+                filename=dino_dict[dino_type]["checkpoint_file"],
+                cache_dir=weight_dir,
+            )
         grounding_dino_model = DinoModel(
             model_config_path=dino_config_file, model_checkpoint_path=dino_checkpoint
         )
 
     if task in ["auto", "segment"]:
         print("Loading SAM...")
-        sam = sam_model_registry[args.sam_type](checkpoint=args.sam_checkpoint)
+        sam_type = args.sam
+        sam_checkpoint = os.path.join(
+            abs_weight_dir, sam_dict[sam_type]["checkpoint_file"]
+        )
+        if not os.path.exists(sam_checkpoint):
+            print(f"Downloading weights for SAM {sam_type}")
+            os.system(
+                f"wget {sam_dict[sam_type]['checkpoint_url']} -O {sam_checkpoint}"
+            )
+        sam = sam_model_registry[sam_type](checkpoint=sam_checkpoint)
         sam.to(device=device)
         sam_predictor = SamPredictor(sam)
         sam_automask_generator = SamAutomaticMaskGenerator(sam)
@@ -280,6 +295,9 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
+    if not os.path.exists(abs_weight_dir):
+        os.makedirs(abs_weight_dir, exist_ok=True)
+
     parser = argparse.ArgumentParser(
         description=(
             "Runs automatic detection and mask generation on an input image or directory of images"
@@ -306,39 +324,29 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--sam-type",
+        "--sam",
         type=str,
-        default="default",
-        help="The type of SA model to load, in ['default', 'vit_h', 'vit_l', 'vit_b']",
+        default=default_sam,
+        choices=sam_dict.keys(),
+        help="The type of SA model to load",
     )
 
     parser.add_argument(
-        "--sam-checkpoint",
+        "--tag2text",
         type=str,
-        default=sam_checkpoint,
-        help="The path to the SAM checkpoint to use for mask generation.",
-    )
-
-    parser.add_argument(
-        "--tag2text-checkpoint",
-        type=str,
-        default=tag2text_checkpoint,
+        default=default_tag2text,
+        choices=tag2text_dict.keys(),
         help="The path to the Tag2Text checkpoint to use for tags and caption generation.",
     )
 
     parser.add_argument(
-        "--dino-config",
+        "--dino",
         type=str,
-        default=dino_config_file,
+        default=default_dino,
+        choices=dino_dict.keys(),
         help="The config file of Grounding Dino model to load",
     )
 
-    parser.add_argument(
-        "--dino-checkpoint",
-        type=str,
-        default=dino_checkpoint,
-        help="The path to the Grounding Dino checkpoint to use for detection.",
-    )
     parser.add_argument(
         "--task",
         help="Task to run",

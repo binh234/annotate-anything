@@ -1,3 +1,5 @@
+import os
+
 # Configurations
 tag2text_dict = {
     "swin_14m": {
@@ -42,7 +44,10 @@ default_sam = "default"
 default_tag2text = "swin_14m"
 default_dino = "swint_ogc"
 
+root_dir = os.path.dirname(os.path.abspath(__file__))
 weight_dir = "weights"
+abs_weight_dir = os.path.join(root_dir, weight_dir)
+
 tag2text_checkpoint = "tag2text_swin_14m.pth"
 tag2text_url = "https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/tag2text_swin_14m.pth"
 sam_checkpoint = "sam_vit_h_4b8939.pth"
