@@ -4,17 +4,17 @@ from typing import Dict
 from typing import List
 
 import numpy as np
+import supervision as sv
 import torch
 import torchvision
 import torchvision.transforms as T
-from huggingface_hub import hf_hub_download
-from PIL import Image
-from segment_anything import SamPredictor
-
 from groundingdino.models import build_model
 from groundingdino.util.inference import Model as DinoModel
 from groundingdino.util.slconfig import SLConfig
 from groundingdino.util.utils import clean_state_dict
+from huggingface_hub import hf_hub_download
+from PIL import Image
+from segment_anything import SamPredictor
 
 # segment anything
 
@@ -56,7 +56,7 @@ def transform_image_tag2text(image_pil: Image) -> torch.Tensor:
     return image
 
 
-def show_anns(anns: List[Dict]):
+def show_anns_sam(anns: List[Dict]):
     """Extracts the mask annotations from the Segment Anything model output and plots them.
     https://github.com/facebookresearch/segment-anything.
 
@@ -76,6 +76,40 @@ def show_anns(anns: List[Dict]):
     for i in range(len(sorted_anns)):
         ann = anns[i]
         m = ann["segmentation"]
+        if full_img is None:
+            full_img = np.zeros((m.shape[0], m.shape[1], 3))
+            map = np.zeros((m.shape[0], m.shape[1]), dtype=np.uint16)
+        map[m != 0] = i + 1
+        color_mask = np.random.random((1, 3)).tolist()[0]
+        full_img[m != 0] = color_mask
+    full_img = full_img * 255
+
+    # anno encoding from https://github.com/LUSSeg/ImageNet-S
+    res = np.zeros((map.shape[0], map.shape[1], 3))
+    res[:, :, 0] = map % 256
+    res[:, :, 1] = map // 256
+    res.astype(np.float32)
+    full_img = np.uint8(full_img)
+    return full_img, res
+
+
+def show_anns_sv(detections: sv.Detections):
+    """Extracts the mask annotations from the Supervision Detections object.
+    https://roboflow.github.io/supervision/detection/core/.
+
+    Arguments:
+      anns (sv.Detections): Containing information about the detections.
+
+    Returns:
+      (np.ndarray): Masked image.
+      (np.ndarray): annotation encoding from https://github.com/LUSSeg/ImageNet-S
+    """
+    if detections.mask is None:
+        return
+    full_img = None
+
+    for i in np.flip(np.argsort(detections.area)):
+        m = detections.mask[i]
         if full_img is None:
             full_img = np.zeros((m.shape[0], m.shape[1], 3))
             map = np.zeros((m.shape[0], m.shape[1]), dtype=np.uint16)
@@ -150,7 +184,7 @@ def detect(
 
     # NMS post process
     if post_process:
-        print(f"Before NMS: {len(detections.xyxy)} boxes")
+        # print(f"Before NMS: {len(detections.xyxy)} boxes")
         nms_idx = (
             torchvision.ops.nms(
                 torch.from_numpy(detections.xyxy),
@@ -166,7 +200,7 @@ def detect(
         detections.confidence = detections.confidence[nms_idx]
         detections.class_id = detections.class_id[nms_idx]
 
-        print(f"After NMS: {len(detections.xyxy)} boxes")
+        # print(f"After NMS: {len(detections.xyxy)} boxes")
 
     return detections, phrases, classes
 
