@@ -38,6 +38,10 @@ dino_dict = {
     },
 }
 
+default_sam = "default"
+default_tag2text = "swin_14m"
+default_dino = "swint_ogc"
+
 weight_dir = "weights"
 tag2text_checkpoint = "tag2text_swin_14m.pth"
 tag2text_url = "https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/tag2text_swin_14m.pth"
