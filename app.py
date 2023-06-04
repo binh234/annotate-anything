@@ -177,8 +177,8 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
         # ToDo: Extract metadata
         if detections:
             id = 1
-            for (xyxy, mask, confidence, class_id, _), area, box_area, score in zip(
-                detections, detections.area, detections.box_area, scores
+            for (xyxy, mask, confidence, class_id, _), area, box_area in zip(
+                detections, detections.area, detections.box_area
             ):
                 annotation = {
                     "id": id,
@@ -191,7 +191,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
                 if mask is not None:
                     # annotation["segmentation"] = mask_to_polygons(mask)
                     annotation["area"] = int(area)
-                    annotation["predicted_iou"] = float(score)
+                    annotation["predicted_iou"] = float(scores[id - 1])
                 metadata["annotations"].append(annotation)
                 id += 1
 
