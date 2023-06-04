@@ -2,17 +2,17 @@ import argparse
 import json
 import os
 import sys
+import tempfile
 
 import numpy as np
 import supervision as sv
+from groundingdino.util.inference import Model as DinoModel
 from imutils import paths
 from PIL import Image
 from segment_anything import sam_model_registry
 from segment_anything import SamAutomaticMaskGenerator
 from segment_anything import SamPredictor
 from tqdm import tqdm
-
-from groundingdino.util.inference import Model as DinoModel
 
 sys.path.append("tag2text")
 
@@ -37,7 +37,10 @@ def process(
     save_mask=False,
 ):
     detections = None
-    metadata = {"image": {}, "annotations": [], "assets": []}
+    metadata = {"image": {}, "annotations": [], "assets": {}}
+
+    if save_mask:
+        metadata["assets"]["intermediate_mask"] = []
 
     try:
         # Load image
@@ -92,7 +95,7 @@ def process(
             # Save detection image
             if output_dir:
                 box_image_path = os.path.join(output_dir, basename + "_detect.png")
-                metadata["assets"].append(box_image_path)
+                metadata["assets"]["detection"] = box_image_path
                 Image.fromarray(box_image).save(box_image_path)
 
         # Segmentation
@@ -115,19 +118,23 @@ def process(
             else:
                 masks = sam_automask_generator.generate(image)
                 opacity = 0.3
-                mask_image, _ = show_anns(masks)
+                mask_image, res = show_anns(masks)
                 annotated_image = np.uint8(mask_image * opacity + image * (1 - opacity))
+                # Save annotation encoding from https://github.com/LUSSeg/ImageNet-S
+                mask_enc_path = os.path.join(output_dir, basename + "_mask_enc.npy")
+                np.save(mask_enc_path, res)
+                metadata["assets"]["mask_enc"] = mask_enc_path
 
             # Save annotated image
             if output_dir:
                 mask_image_path = os.path.join(output_dir, basename + "_mask.png")
-                metadata["assets"].append(mask_image_path)
+                metadata["assets"]["mask"] = mask_image_path
                 Image.fromarray(mask_image).save(mask_image_path)
 
                 annotated_image_path = os.path.join(
                     output_dir, basename + "_annotate.png"
                 )
-                metadata["assets"].append(annotated_image_path)
+                metadata["assets"]["annotate"] = annotated_image_path
                 Image.fromarray(annotated_image).save(annotated_image_path)
 
         # ToDo: Extract metadata
@@ -152,7 +159,7 @@ def process(
                     mask_image_path = os.path.join(
                         output_dir, f"{basename}_mask_{id}.png"
                     )
-                    metadata["assets"].append(mask_image_path)
+                    metadata["assets"]["intermediate_mask"].append(mask_image_path)
                     Image.fromarray(mask * 255).save(mask_image_path)
 
                 id += 1
@@ -182,17 +189,20 @@ def process(
                     mask_image_path = os.path.join(
                         output_dir, f"{basename}_mask_{id}.png"
                     )
-                    metadata["assets"].append(mask_image_path)
+                    metadata["assets"]["intermediate_mask"].append(mask_image_path)
                     Image.fromarray(mask * 255).save(mask_image_path)
 
                 id += 1
 
         if output_dir:
-            meta_file_path = os.path.join(output_dir, basename + ".json")
+            meta_file_path = os.path.join(output_dir, basename + "_meta.json")
             with open(meta_file_path, "w") as fp:
                 json.dump(metadata, fp)
+        else:
+            meta_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+            meta_file_path = meta_file.name
 
-            return meta_file_path
+        return meta_file_path
     except Exception as error:
         raise ValueError(f"global exception: {error}")
 
