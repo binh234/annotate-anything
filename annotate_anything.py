@@ -33,8 +33,9 @@ def process(
     box_threshold,
     text_threshold,
     iou_threshold,
-    device,
+    device="cuda",
     output_dir=None,
+    save_ann=True,
     save_mask=False,
 ):
     detections = None
@@ -84,7 +85,7 @@ def process(
             )
 
             # Save detection image
-            if output_dir:
+            if output_dir and save_ann:
                 # Draw boxes
                 box_annotator = sv.BoxAnnotator()
                 labels = [
@@ -123,7 +124,7 @@ def process(
                 )
 
             # Save annotated image
-            if output_dir:
+            if output_dir and save_ann:
                 mask_annotator = sv.MaskAnnotator()
                 mask_image, res = show_anns_sv(detections)
                 annotated_image = mask_annotator.annotate(image, detections=detections)
@@ -197,6 +198,7 @@ def main(args: argparse.Namespace) -> None:
     box_threshold = args.box_threshold
     text_threshold = args.text_threshold
     iou_threshold = args.iou_threshold
+    save_ann = not args.no_save_ann
     save_mask = args.save_mask
 
     # load model
@@ -292,6 +294,7 @@ def main(args: argparse.Namespace) -> None:
                 iou_threshold=iou_threshold,
                 device=device,
                 output_dir=args.output,
+                save_ann=save_ann,
                 save_mask=save_mask,
             )
 
@@ -370,6 +373,12 @@ if __name__ == "__main__":
         "--iou-threshold", type=float, default=0.5, help="iou threshold"
     )
 
+    parser.add_argument(
+        "--no-save-ann",
+        action="store_true",
+        default=False,
+        help="If False, save original image with blended masks and detection boxes.",
+    )
     parser.add_argument(
         "--save-mask",
         action="store_true",
