@@ -1,8 +1,10 @@
+import functools
 import json
 import os
 import sys
 import tempfile
 
+import cv2
 import gradio as gr
 import numpy as np
 import supervision as sv
@@ -22,7 +24,7 @@ sys.path.append("tag2text")
 
 from tag2text.models import tag2text
 from config import *
-from utils import download_file_hf, detect, segment, show_anns_sam, generate_tags
+from utils import download_file_hf, detect, segment, generate_tags
 
 if not os.path.exists(abs_weight_dir):
     os.makedirs(abs_weight_dir, exist_ok=True)
@@ -83,7 +85,16 @@ grounding_dino_model = DinoModel(
 )
 
 
-def process(image_path, task, prompt, box_threshold, text_threshold, iou_threshold):
+def process(
+    image_path,
+    task,
+    prompt,
+    box_threshold,
+    text_threshold,
+    iou_threshold,
+    kernel_size,
+    expand_mask,
+):
     global tag2text_model, sam_predictor, sam_automask_generator, grounding_dino_model, device
     output_gallery = []
     detections = None
@@ -94,6 +105,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
         image = Image.open(image_path)
         image_pil = image.convert("RGB")
         image = np.array(image_pil)
+        orig_image = image.copy()
 
         # Extract image metadata
         filename = os.path.basename(image_path)
@@ -103,7 +115,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
         metadata["image"]["height"] = h
 
         # Generate tags
-        if task in ["auto", "detect"] and prompt == "":
+        if task in ["auto", "detection"] and prompt == "":
             tags, caption = generate_tags(tag2text_model, image_pil, "None", device)
             prompt = " . ".join(tags)
             print(f"Caption: {caption}")
@@ -143,20 +155,38 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
 
         # Segmentation
         if task in ["auto", "segment"]:
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * kernel_size + 1, 2 * kernel_size + 1)
+            )
             if detections:
                 masks, scores = segment(
-                    sam_predictor, image=image, boxes=detections.xyxy
+                    sam_predictor, image=orig_image, boxes=detections.xyxy
                 )
+                if expand_mask:
+                    masks = [
+                        cv2.dilate(mask.astype(np.uint8), kernel) for mask in masks
+                    ]
+                else:
+                    masks = [
+                        cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+                        for mask in masks
+                    ]
                 detections.mask = masks
+                binary_mask = functools.reduce(
+                    lambda x, y: x + y, detections.mask
+                ).astype(np.bool)
             else:
-                masks = sam_automask_generator.generate(image)
+                masks = sam_automask_generator.generate(orig_image)
                 sorted_generated_masks = sorted(
                     masks, key=lambda x: x["area"], reverse=True
                 )
 
                 xywh = np.array([mask["bbox"] for mask in sorted_generated_masks])
                 mask = np.array(
-                    [mask["segmentation"] for mask in sorted_generated_masks]
+                    [
+                        cv2.dilate(mask["segmentation"].astype(np.uint8), kernel)
+                        for mask in sorted_generated_masks
+                    ]
                 )
                 scores = np.array(
                     [mask["predicted_iou"] for mask in sorted_generated_masks]
@@ -164,9 +194,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
                 detections = sv.Detections(
                     xyxy=xywh_to_xyxy(boxes_xywh=xywh), mask=mask
                 )
-                # opacity = 0.4
-                # mask_image, _ = show_anns_sam(masks)
-                # annotated_image = np.uint8(mask_image * opacity + image * (1 - opacity))
+                binary_mask = None
 
             mask_annotator = sv.MaskAnnotator()
             mask_image = np.zeros_like(image, dtype=np.uint8)
@@ -174,7 +202,13 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
                 mask_image, detections=detections, opacity=1
             )
             annotated_image = mask_annotator.annotate(image, detections=detections)
+
             output_gallery.append(mask_image)
+            if binary_mask is not None:
+                binary_mask_image = binary_mask * 255
+                cutout_image = np.expand_dims(binary_mask, axis=-1) * orig_image
+                output_gallery.append(binary_mask_image)
+                output_gallery.append(cutout_image)
             output_gallery.append(annotated_image)
 
         # ToDo: Extract metadata
@@ -200,7 +234,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
 
         meta_file = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
         meta_file_path = meta_file.name
-        with open(meta_file_path, "w") as fp:
+        with open(meta_file_path, "w", encoding="utf-8") as fp:
             json.dump(metadata, fp)
 
         return output_gallery, meta_file_path
@@ -228,7 +262,6 @@ with gr.Blocks(css="style.css", title=title) as demo:
                     value=0.3,
                     step=0.05,
                     label="Box threshold",
-                    info="Hash size to use for image hashing",
                 )
                 text_threshold = gr.Slider(
                     minimum=0,
@@ -236,7 +269,6 @@ with gr.Blocks(css="style.css", title=title) as demo:
                     value=0.25,
                     step=0.05,
                     label="Text threshold",
-                    info="Number of history images used to find out duplicate image",
                 )
                 iou_threshold = gr.Slider(
                     minimum=0,
@@ -244,7 +276,18 @@ with gr.Blocks(css="style.css", title=title) as demo:
                     value=0.5,
                     step=0.05,
                     label="IOU threshold",
-                    info="Minimum similarity threshold (in percent) to consider 2 images to be similar",
+                    info="Intersection over Union threshold",
+                )
+                kernel_size = gr.Slider(
+                    minimum=1,
+                    maximum=5,
+                    value=2,
+                    step=1,
+                    label="Kernel size",
+                    info="Use to smooth segment masks",
+                )
+                expand_mask = gr.Checkbox(
+                    label="Expand mask",
                 )
             run_button = gr.Button(label="Run")
 
@@ -253,12 +296,11 @@ with gr.Blocks(css="style.css", title=title) as demo:
                 label="Generated images", show_label=False, elem_id="gallery"
             ).style(preview=True, grid=2, object_fit="scale-down")
             meta_file = gr.File(label="Metadata file")
-
     with gr.Row(elem_classes=["container"]):
         gr.Examples(
             [
                 ["examples/dog.png", "auto", ""],
-                ["examples/eiffel.png", "auto", ""],
+                ["examples/eiffel.jpg", "auto", "tower . lake . grass . sky"],
                 ["examples/eiffel.png", "segment", ""],
                 ["examples/girl.png", "auto", "girl . face"],
                 ["examples/horse.png", "detect", "horse"],
@@ -276,6 +318,8 @@ with gr.Blocks(css="style.css", title=title) as demo:
             box_threshold,
             text_threshold,
             iou_threshold,
+            kernel_size,
+            expand_mask,
         ],
         outputs=[gallery, meta_file],
     )
