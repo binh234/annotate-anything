@@ -120,7 +120,7 @@ annotation {
 
 ## References
 
-[Segment Anything](https://github.com/facebookresearch/segment-anything)
-[Grounding DINO](https://github.com/IDEA-Research/GroundingDINO)
-[Tag2Text](https://github.com/xinyu1205/Tag2Text)
-[Grounded SAM](https://github.com/IDEA-Research/Grounded-Segment-Anything)
+- [Segment Anything](https://github.com/facebookresearch/segment-anything)
+- [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO)
+- [Tag2Text](https://github.com/xinyu1205/Tag2Text)
+- [Grounded SAM](https://github.com/IDEA-Research/Grounded-Segment-Anything)
