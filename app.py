@@ -22,7 +22,7 @@ sys.path.append("tag2text")
 
 from tag2text.models import tag2text
 from config import *
-from utils import download_file_hf, detect, segment, show_anns, generate_tags
+from utils import download_file_hf, detect, segment, show_anns_sam, generate_tags
 
 if not os.path.exists(abs_weight_dir):
     os.makedirs(abs_weight_dir, exist_ok=True)
