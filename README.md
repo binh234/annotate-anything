@@ -51,6 +51,7 @@ Runs automatic detection and mask generation on an input image or directory of i
 | `--box-threshold BOX_THRESHOLD`          | Box threshold                                                                                                                              |
 | `--text-threshold TEXT_THRESHOLD`        | Text threshold                                                                                                                             |
 | `--iou-threshold IOU_THRESHOLD`          | IoU threshold                                                                                                                              |
+| `--no-save-ann`                          | If False, save original image with blended masks and detection boxes. masks.                                                               |
 | `--save-mask`                            | If True, save all intermediate masks.                                                                                                      |
 | `--device DEVICE`                        | The device to run generation on.                                                                                                           |
 
