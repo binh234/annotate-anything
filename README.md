@@ -10,6 +10,8 @@
 
 ## Install libraries
 
+**Important notes**: To install [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO) with GPU, CUDA_HOME environment variable must be set.
+
 ```bash
 pip install -r requirements.txt
 ```
