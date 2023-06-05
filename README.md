@@ -114,6 +114,35 @@ AMG Settings:
                         Disconnected mask regions or holes with area smaller than this value in pixels are removed by postprocessing.
 ```
 
+## Metadata file
+
+The metadata file will contain the following information:
+
+```text
+{
+    "image"                 : image_info,
+    "annotations"           : [annotation],
+}
+
+image_info {
+    "width"                 : int,              # Image width
+    "height"                : int,              # Image height
+    "file_name"             : str,              # Image filename
+    "caption"               : str,              # Image caption
+    "tags"                  : [str],            # Image tags
+}
+
+annotation {
+    "id"                    : int,              # Annotation id
+    "bbox"                  : [x1, y1, x2, y2],     # The box around the mask, in XYXY format
+    "area"                  : int,              # The area in pixels of the mask
+    "box_area"              : float,            # The area in pixels of the bounding box
+    "predicted_iou"         : float,            # The model's own prediction of the mask's quality
+    "confidence"            : float,            # A measure of the prediction confidency
+    "label"                 : str,              # Predicted class for the object inside the bounding box (if exist)
+}
+```
+
 ## References
 
 [Segment Anything](https://github.com/facebookresearch/segment-anything)
