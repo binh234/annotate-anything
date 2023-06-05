@@ -202,7 +202,7 @@ def main(args: argparse.Namespace) -> None:
     # load model
     if task in ["auto", "detection"] and prompt == "":
         print("Loading Tag2Text model...")
-        tag2text_type = args.tag2text
+        tag2text_type = args.tag2text_type
         tag2text_checkpoint = os.path.join(
             abs_weight_dir, tag2text_dict[tag2text_type]["checkpoint_file"]
         )
@@ -225,7 +225,7 @@ def main(args: argparse.Namespace) -> None:
 
     if task in ["auto", "detection"] or prompt != "":
         print("Loading Grounding Dino model...")
-        dino_type = args.dino
+        dino_type = args.dino_type
         dino_checkpoint = os.path.join(
             abs_weight_dir, dino_dict[dino_type]["checkpoint_file"]
         )
@@ -253,7 +253,7 @@ def main(args: argparse.Namespace) -> None:
 
     if task in ["auto", "segment"]:
         print("Loading SAM...")
-        sam_type = args.sam
+        sam_type = args.sam_type
         sam_checkpoint = os.path.join(
             abs_weight_dir, sam_dict[sam_type]["checkpoint_file"]
         )
@@ -319,34 +319,31 @@ if __name__ == "__main__":
         "-o",
         type=str,
         required=True,
-        help=(
-            "Path to the directory where masks will be output. Output will be either a folder "
-            "of PNGs per image or a single json with COCO-style masks."
-        ),
+        help="Path to the directory where masks will be output.",
     )
 
     parser.add_argument(
-        "--sam",
+        "--sam-type",
         type=str,
         default=default_sam,
         choices=sam_dict.keys(),
-        help="The type of SA model to load",
+        help="The type of SA model use for segmentation.",
     )
 
     parser.add_argument(
-        "--tag2text",
+        "--tag2text-type",
         type=str,
         default=default_tag2text,
         choices=tag2text_dict.keys(),
-        help="The path to the Tag2Text checkpoint to use for tags and caption generation.",
+        help="The type of Tag2Text model use for tags and caption generation.",
     )
 
     parser.add_argument(
-        "--dino",
+        "--dino-type",
         type=str,
         default=default_dino,
         choices=dino_dict.keys(),
-        help="The config file of Grounding Dino model to load",
+        help="The type of Grounding Dino model use for promptable object detection.",
     )
 
     parser.add_argument(
