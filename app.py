@@ -256,6 +256,7 @@ with gr.Blocks(css="style.css", title=title) as demo:
             text_prompt = gr.Textbox(
                 label="Detection Prompt",
                 info="To detect multiple objects, seperating each name with '.', like this: cat . dog . chair ",
+                placeholder="cat . dog . chair",
             )
             with gr.Accordion("Advanced parameters", open=False):
                 box_threshold = gr.Slider(
