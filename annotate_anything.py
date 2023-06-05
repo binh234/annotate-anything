@@ -1,9 +1,11 @@
 import argparse
+import functools
 import json
 import os
 import sys
 import tempfile
 
+import cv2
 import numpy as np
 import supervision as sv
 from groundingdino.util.inference import Model as DinoModel
@@ -33,6 +35,8 @@ def process(
     box_threshold,
     text_threshold,
     iou_threshold,
+    kernel_size=2,
+    expand_mask=False,
     device="cuda",
     output_dir=None,
     save_ann=True,
@@ -49,6 +53,7 @@ def process(
         image = Image.open(image_path)
         image_pil = image.convert("RGB")
         image = np.array(image_pil)
+        orig_image = image.copy()
 
         # Extract image metadata
         filename = os.path.basename(image_path)
@@ -101,27 +106,51 @@ def process(
 
         # Segmentation
         if task in ["auto", "segment"]:
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * kernel_size + 1, 2 * kernel_size + 1)
+            )
             if detections:
                 masks, scores = segment(
-                    sam_predictor, image=image, boxes=detections.xyxy
+                    sam_predictor, image=orig_image, boxes=detections.xyxy
                 )
+                if expand_mask:
+                    masks = [
+                        cv2.dilate(mask.astype(np.uint8), kernel) for mask in masks
+                    ]
+                else:
+                    masks = [
+                        cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, kernel)
+                        for mask in masks
+                    ]
                 detections.mask = masks
+                binary_mask = functools.reduce(
+                    lambda x, y: x + y, detections.mask
+                ).astype(np.bool)
             else:
-                masks = sam_automask_generator.generate(image)
+                masks = sam_automask_generator.generate(orig_image)
                 sorted_generated_masks = sorted(
                     masks, key=lambda x: x["area"], reverse=True
                 )
 
                 xywh = np.array([mask["bbox"] for mask in sorted_generated_masks])
-                mask = np.array(
-                    [mask["segmentation"] for mask in sorted_generated_masks]
-                )
                 scores = np.array(
                     [mask["predicted_iou"] for mask in sorted_generated_masks]
                 )
+                if expand_mask:
+                    mask = np.array(
+                        [
+                            cv2.dilate(mask["segmentation"].astype(np.uint8), kernel)
+                            for mask in sorted_generated_masks
+                        ]
+                    )
+                else:
+                    mask = np.array(
+                        [mask["segmentation"] for mask in sorted_generated_masks]
+                    )
                 detections = sv.Detections(
                     xyxy=xywh_to_xyxy(boxes_xywh=xywh), mask=mask
                 )
+                binary_mask = None
 
             # Save annotated image
             if output_dir and save_ann:
@@ -137,6 +166,13 @@ def process(
                 mask_enc_path = os.path.join(output_dir, basename + "_mask_enc.npy")
                 np.save(mask_enc_path, res)
                 metadata["assets"]["mask_enc"] = mask_enc_path
+
+                if binary_mask is not None:
+                    cutout_image = np.expand_dims(binary_mask, axis=-1) * orig_image
+                    cutout_image_path = os.path.join(
+                        output_dir, basename + "_cutout.png"
+                    )
+                    Image.fromarray(cutout_image).save(cutout_image_path)
 
                 annotated_image_path = os.path.join(
                     output_dir, basename + "_annotate.png"
@@ -371,6 +407,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--iou-threshold", type=float, default=0.5, help="iou threshold"
+    )
+    parser.add_argument(
+        "--kernel-size",
+        type=int,
+        default=2,
+        choices=range(1, 6),
+        help="kernel size use for smoothing/expanding segment masks",
+    )
+    parser.add_argument(
+        "--expand-mask",
+        action="store_true",
+        default=False,
+        help="If True, expanding segment masks for smoother output.",
     )
 
     parser.add_argument(
