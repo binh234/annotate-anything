@@ -128,6 +128,7 @@ def process(image_path, task, prompt, box_threshold, text_threshold, iou_thresho
                 iou_threshold=iou_threshold,
                 post_process=True,
             )
+            print(phrases)
 
             # Draw boxes
             box_annotator = sv.BoxAnnotator()
