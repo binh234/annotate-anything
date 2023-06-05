@@ -217,7 +217,10 @@ with gr.Blocks(css="style.css", title=title) as demo:
             task = gr.Dropdown(
                 ["detect", "segment", "auto"], value="auto", label="task_type"
             )
-            text_prompt = gr.Textbox(label="Detection Prompt")
+            text_prompt = gr.Textbox(
+                label="Detection Prompt",
+                info="To detect multiple objects, seperating each name with '.', like this: cat . dog . chair ",
+            )
             with gr.Accordion("Advanced parameters", open=False):
                 box_threshold = gr.Slider(
                     minimum=0,
