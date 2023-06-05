@@ -13,6 +13,10 @@ import cv2  # type: ignore
 from segment_anything import sam_model_registry
 from segment_anything import SamAutomaticMaskGenerator
 
+from config import abs_weight_dir
+from config import default_sam
+from config import sam_dict
+
 parser = argparse.ArgumentParser(
     description=(
         "Runs automatic mask generation on an input image or directory of images, "
@@ -43,15 +47,9 @@ parser.add_argument(
 parser.add_argument(
     "--model-type",
     type=str,
-    required=True,
-    help="The type of model to load, in ['default', 'vit_h', 'vit_l', 'vit_b']",
-)
-
-parser.add_argument(
-    "--checkpoint",
-    type=str,
-    required=True,
-    help="The path to the SAM checkpoint to use for mask generation.",
+    default=default_sam,
+    choices=sam_dict.keys(),
+    help="The type of SA model use for segmentation.",
 )
 
 parser.add_argument(
@@ -197,8 +195,19 @@ def get_amg_kwargs(args):
 
 
 def main(args: argparse.Namespace) -> None:
+    if not os.path.exists(abs_weight_dir):
+        os.makedirs(abs_weight_dir, exist_ok=True)
+
     print("Loading model...")
-    sam = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
+    model_type = args.model_type
+    sam_checkpoint = os.path.join(
+        abs_weight_dir, sam_dict[model_type]["checkpoint_file"]
+    )
+    if not os.path.exists(sam_checkpoint):
+        print(f"Downloading weights for SAM {model_type}")
+        os.system(f"wget {sam_dict[model_type]['checkpoint_url']} -O {sam_checkpoint}")
+
+    sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     _ = sam.to(device=args.device)
     output_mode = "coco_rle" if args.convert_to_rle else "binary_mask"
     amg_kwargs = get_amg_kwargs(args)
