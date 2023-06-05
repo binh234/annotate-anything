@@ -73,7 +73,7 @@ def process(
 
         # Detect boxes
         if prompt != "":
-            detections, _, classes = detect(
+            detections, phrases, classes = detect(
                 grounding_dino_model,
                 image,
                 caption=prompt,
@@ -88,8 +88,8 @@ def process(
                 # Draw boxes
                 box_annotator = sv.BoxAnnotator()
                 labels = [
-                    f"{classes[class_id] if class_id else 'Unkown'} {confidence:0.2f}"
-                    for _, _, confidence, class_id, _ in detections
+                    f"{phrases[i]} {detections.confidence[i]:0.2f}"
+                    for i in range(len(phrases))
                 ]
                 box_image = box_annotator.annotate(
                     scene=image, detections=detections, labels=labels
@@ -145,22 +145,24 @@ def process(
 
         # ToDo: Extract metadata
         if detections:
-            id = 1
-            for (xyxy, mask, confidence, class_id, _), area, box_area in zip(
+            i = 0
+            for (xyxy, mask, confidence, _, _), area, box_area in zip(
                 detections, detections.area, detections.box_area
             ):
                 annotation = {
-                    "id": id,
+                    "id": i + 1,
                     "bbox": [int(x) for x in xyxy],
                     "box_area": float(box_area),
                 }
-                if class_id:
-                    annotation["box_confidence"] = float(confidence)
-                    annotation["label"] = classes[class_id] if class_id else "Unkown"
+                if confidence:
+                    annotation["confidence"] = float(confidence)
+                    annotation["label"] = phrases[i]
                 if mask is not None:
+                    # annotation["segmentation"] = mask_to_polygons(mask)
                     annotation["area"] = int(area)
-                    annotation["predicted_iou"] = float(scores[id - 1])
+                    annotation["predicted_iou"] = float(scores[i])
                 metadata["annotations"].append(annotation)
+                i += 1
 
                 if output_dir and save_mask:
                     mask_image_path = os.path.join(
@@ -168,8 +170,6 @@ def process(
                     )
                     metadata["assets"]["intermediate_mask"].append(mask_image_path)
                     Image.fromarray(mask * 255).save(mask_image_path)
-
-                id += 1
 
         if output_dir:
             meta_file_path = os.path.join(output_dir, basename + "_meta.json")
@@ -246,7 +246,9 @@ def main(args: argparse.Namespace) -> None:
                 cache_dir=weight_dir,
             )
         grounding_dino_model = DinoModel(
-            model_config_path=dino_config_file, model_checkpoint_path=dino_checkpoint
+            model_config_path=dino_config_file,
+            model_checkpoint_path=dino_checkpoint,
+            device=device,
         )
 
     if task in ["auto", "segment"]:
