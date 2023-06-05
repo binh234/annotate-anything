@@ -17,9 +17,6 @@ from segment_anything import SamPredictor
 from supervision.detection.utils import mask_to_polygons
 from supervision.detection.utils import xywh_to_xyxy
 
-# segment anything
-# Grounding DINO
-
 sys.path.append("tag2text")
 
 from tag2text.models import tag2text
@@ -182,15 +179,20 @@ def process(
                 )
 
                 xywh = np.array([mask["bbox"] for mask in sorted_generated_masks])
-                mask = np.array(
-                    [
-                        cv2.dilate(mask["segmentation"].astype(np.uint8), kernel)
-                        for mask in sorted_generated_masks
-                    ]
-                )
                 scores = np.array(
                     [mask["predicted_iou"] for mask in sorted_generated_masks]
                 )
+                if expand_mask:
+                    mask = np.array(
+                        [
+                            cv2.dilate(mask["segmentation"].astype(np.uint8), kernel)
+                            for mask in sorted_generated_masks
+                        ]
+                    )
+                else:
+                    mask = np.array(
+                        [mask["segmentation"] for mask in sorted_generated_masks]
+                    )
                 detections = sv.Detections(
                     xyxy=xywh_to_xyxy(boxes_xywh=xywh), mask=mask
                 )
