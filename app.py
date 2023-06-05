@@ -171,7 +171,7 @@ def process(
                 detections.mask = masks
                 binary_mask = functools.reduce(
                     lambda x, y: x + y, detections.mask
-                ).astype(np.bool)
+                ).astype(bool)
             else:
                 masks = sam_automask_generator.generate(orig_image)
                 sorted_generated_masks = sorted(
