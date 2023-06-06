@@ -2,6 +2,8 @@
 
 [![HuggingFace Space](https://img.shields.io/badge/%F0%9F%A4%97-HuggingFace%20Space-important.svg)](https://huggingface.co/spaces/dragonSwing/annotate-anything) [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/binh234/annotate-anything/blob/main/notebooks/Annotate_Anything.ipynb) [![Kaggle](https://img.shields.io/badge/Demo-Kaggle-cyan)](https://www.kaggle.com/code/binh234/annotate-anything)
 
+Combine the strengths of different models including [Tag2Text](https://github.com/xinyu1205/Tag2Text), [Grounding DINO](https://github.com/IDEA-Research/GroundingDINO), and [Segment Anything](https://github.com/facebookresearch/segment-anything) in order to build a very powerful pipeline which aims to detect and segment Anything with (or without) text inputs automatically.
+
 ![demo](images/demo.png)
 
 ![demo_seg](images/demo_seg.png)
